@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import type { FormEvent } from 'react';
 import {
   Badge,
   Button,
@@ -8,10 +9,10 @@ import {
   Input,
   Label,
   Select,
-  Table,
 } from '../components/ui';
+import { api } from '../lib/api';
 import { useAppStore } from '../store/appStore';
-import type { Transaction } from '../types';
+import type { LedgerTransaction } from '../types';
 import { formatCurrency } from '../utils/format';
 
 type TxForm = {
@@ -40,10 +41,9 @@ export function TransactionsPage() {
   const activeCompany = useAppStore((s) => s.activeCompany);
   const accounts = useAppStore((s) => s.accounts);
   const transactions = useAppStore((s) => s.transactions);
-  const loadTransactions = useAppStore((s) => s.loadTransactions);
-  const createTransaction = useAppStore((s) => s.createTransaction);
-  const updateTransaction = useAppStore((s) => s.updateTransaction);
-  const deleteTransaction = useAppStore((s) => s.deleteTransaction);
+  const token = useAppStore((s) => s.token);
+  const refreshTransactions = useAppStore((s) => s.refreshTransactions);
+  const refreshDashboard = useAppStore((s) => s.refreshDashboard);
 
   const [form, setForm] = useState<TxForm>(emptyForm());
   const [accountId, setAccountId] = useState('');
@@ -60,7 +60,7 @@ export function TransactionsPage() {
 
   async function refreshWithFilters() {
     if (!activeCompany) return;
-    await loadTransactions(activeCompany.id, {
+    await refreshTransactions({
       accountId: accountId ? Number(accountId) : undefined,
       fromDate: fromDate || undefined,
       toDate: toDate || undefined,
@@ -78,7 +78,7 @@ export function TransactionsPage() {
     }
   }
 
-  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!activeCompany) return;
     setError(null);
@@ -95,29 +95,38 @@ export function TransactionsPage() {
     }
 
     try {
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
       if (form.id) {
-        await updateTransaction(activeCompany.id, form.id, {
-          accountId: parsedAccountId,
-          date: form.date,
-          amount: parsedAmount,
-          description: form.description.trim(),
-        });
+        await api.transactions.update(
+          token,
+          activeCompany.id,
+          form.id,
+          parsedAccountId,
+          form.date,
+          parsedAmount,
+          form.description.trim(),
+        );
       } else {
-        await createTransaction(activeCompany.id, {
-          accountId: parsedAccountId,
-          date: form.date,
-          amount: parsedAmount,
-          description: form.description.trim(),
-        });
+        await api.transactions.create(
+          token,
+          activeCompany.id,
+          parsedAccountId,
+          form.date,
+          parsedAmount,
+          form.description.trim(),
+        );
       }
       setForm(emptyForm());
       await refreshWithFilters();
+      await refreshDashboard();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save transaction');
     }
   }
 
-  function onEdit(tx: Transaction) {
+  function onEdit(tx: LedgerTransaction) {
     setForm({
       id: tx.id,
       date: tx.date,
@@ -132,8 +141,12 @@ export function TransactionsPage() {
     if (!window.confirm('Delete this transaction?')) return;
     setError(null);
     try {
-      await deleteTransaction(activeCompany.id, transactionId);
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+      await api.transactions.delete(token, activeCompany.id, transactionId);
       await refreshWithFilters();
+      await refreshDashboard();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete transaction');
     }
@@ -141,10 +154,17 @@ export function TransactionsPage() {
 
   return (
     <div className="space-y-4">
-      <Card title={form.id ? 'Edit transaction' : 'Add transaction'}>
+      <Card className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">
+            {form.id ? 'Edit transaction' : 'Add transaction'}
+          </h2>
+        </div>
         <form className="grid gap-3 md:grid-cols-4" onSubmit={onSubmit}>
-          <Field>
-            <Label htmlFor="tx-date">Date</Label>
+          <Field label="Date">
+            <Label htmlFor="tx-date" className="sr-only">
+              Date
+            </Label>
             <Input
               id="tx-date"
               type="date"
@@ -153,8 +173,10 @@ export function TransactionsPage() {
               required
             />
           </Field>
-          <Field>
-            <Label htmlFor="tx-account">Account</Label>
+          <Field label="Account">
+            <Label htmlFor="tx-account" className="sr-only">
+              Account
+            </Label>
             <Select
               id="tx-account"
               value={form.accountId}
@@ -169,8 +191,10 @@ export function TransactionsPage() {
               ))}
             </Select>
           </Field>
-          <Field>
-            <Label htmlFor="tx-amount">Amount</Label>
+          <Field label="Amount">
+            <Label htmlFor="tx-amount" className="sr-only">
+              Amount
+            </Label>
             <Input
               id="tx-amount"
               type="number"
@@ -180,8 +204,10 @@ export function TransactionsPage() {
               required
             />
           </Field>
-          <Field>
-            <Label htmlFor="tx-description">Description</Label>
+          <Field label="Description">
+            <Label htmlFor="tx-description" className="sr-only">
+              Description
+            </Label>
             <Input
               id="tx-description"
               value={form.description}
@@ -202,10 +228,13 @@ export function TransactionsPage() {
         </form>
       </Card>
 
-      <Card title="Transactions">
+      <Card className="space-y-4">
+        <h2 className="text-lg font-semibold text-slate-900">Transactions</h2>
         <div className="mb-4 grid gap-3 md:grid-cols-5">
-          <Field>
-            <Label htmlFor="filter-account">Account</Label>
+          <Field label="Account">
+            <Label htmlFor="filter-account" className="sr-only">
+              Account
+            </Label>
             <Select
               id="filter-account"
               value={accountId}
@@ -219,8 +248,10 @@ export function TransactionsPage() {
               ))}
             </Select>
           </Field>
-          <Field>
-            <Label htmlFor="filter-from">From</Label>
+          <Field label="From">
+            <Label htmlFor="filter-from" className="sr-only">
+              From
+            </Label>
             <Input
               id="filter-from"
               type="date"
@@ -228,8 +259,10 @@ export function TransactionsPage() {
               onChange={(event) => setFromDate(event.target.value)}
             />
           </Field>
-          <Field>
-            <Label htmlFor="filter-to">To</Label>
+          <Field label="To">
+            <Label htmlFor="filter-to" className="sr-only">
+              To
+            </Label>
             <Input
               id="filter-to"
               type="date"
@@ -237,8 +270,10 @@ export function TransactionsPage() {
               onChange={(event) => setToDate(event.target.value)}
             />
           </Field>
-          <Field>
-            <Label htmlFor="filter-sort-by">Sort by</Label>
+          <Field label="Sort by">
+            <Label htmlFor="filter-sort-by" className="sr-only">
+              Sort by
+            </Label>
             <Select
               id="filter-sort-by"
               value={sortBy}
@@ -251,8 +286,10 @@ export function TransactionsPage() {
               <option value="description">Description</option>
             </Select>
           </Field>
-          <Field>
-            <Label htmlFor="filter-sort-dir">Direction</Label>
+          <Field label="Direction">
+            <Label htmlFor="filter-sort-dir" className="sr-only">
+              Direction
+            </Label>
             <Select
               id="filter-sort-dir"
               value={sortDir}
@@ -273,58 +310,48 @@ export function TransactionsPage() {
             description="Create the first cash movement for this company."
           />
         ) : (
-          <Table
-            columns={[
-              {
-                key: 'date',
-                header: 'Date',
-              },
-              {
-                key: 'description',
-                header: 'Description',
-                render: (_value, row) => row.description || '-',
-              },
-              {
-                key: 'account_name',
-                header: 'Account',
-                render: (_value, row) => (
-                  <div className="flex items-center gap-2">
-                    <span>{row.account_name}</span>
-                    <Badge>{row.account_type}</Badge>
-                  </div>
-                ),
-              },
-              {
-                key: 'amount',
-                header: 'Amount',
-                className: 'text-right',
-                render: (value) => (
-                  <span className={Number(value) >= 0 ? 'text-emerald-700' : 'text-rose-700'}>
-                    {formatCurrency(Number(value))}
-                  </span>
-                ),
-              },
-              {
-                key: 'id',
-                header: 'Actions',
-                render: (_value, row) => (
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => onEdit(row as Transaction)}
-                    >
-                      Edit
-                    </Button>
-                    <Button type="button" variant="danger" onClick={() => onDelete(row.id)}>
-                      Delete
-                    </Button>
-                  </div>
-                ),
-              },
-            ]}
-            rows={transactions}
-          />
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-slate-50 text-slate-600">
+                <tr>
+                  <th className="px-3 py-2">Date</th>
+                  <th className="px-3 py-2">Description</th>
+                  <th className="px-3 py-2">Account</th>
+                  <th className="px-3 py-2 text-right">Amount</th>
+                  <th className="px-3 py-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {transactions.map((row) => (
+                  <tr key={row.id} className="border-t border-slate-100">
+                    <td className="px-3 py-2">{row.date}</td>
+                    <td className="px-3 py-2">{row.description || '-'}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span>{row.account_name}</span>
+                        <Badge>{row.account_type}</Badge>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <span className={row.amount >= 0 ? 'text-emerald-700' : 'text-rose-700'}>
+                        {formatCurrency(row.amount)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex gap-2">
+                        <Button type="button" variant="secondary" onClick={() => onEdit(row)}>
+                          Edit
+                        </Button>
+                        <Button type="button" variant="danger" onClick={() => onDelete(row.id)}>
+                          Delete
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
     </div>

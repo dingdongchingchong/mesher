@@ -1,12 +1,10 @@
 /// <reference types="vite/client" />
 
-import type { IpcApi } from './types'
+import type { IpcApi, IpcInvoker } from './types'
 
 declare global {
   interface Window {
-    desktopApi?: {
-      invoke: <T = unknown>(channel: string, payload?: unknown) => Promise<T>
-    }
+    desktopApi?: IpcInvoker
     api: IpcApi
   }
 }

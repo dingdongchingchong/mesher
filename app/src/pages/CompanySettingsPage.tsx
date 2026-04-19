@@ -1,78 +1,65 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
+import { api } from '../lib/api';
 import { useAppStore } from '../store/appStore';
-import type { CompanyRole } from '../types';
-import { Button, Card, Field, Input, Select } from '../components/ui';
+import { Button, Card, ErrorText, Field, Input, Select } from '../components/ui';
+import type { Role } from '../types';
+import { formatMonthLabel } from '../utils/format';
 
 export function CompanySettingsPage() {
-  const activeCompany = useAppStore((state) => state.activeCompany);
+  const token = useAppStore((state) => state.token);
+  const selectedCompany = useAppStore((state) => state.activeCompany);
   const activeRole = useAppStore((state) => state.activeRole);
-  const currentUser = useAppStore((state) => state.currentUser);
+  const companies = useAppStore((state) => state.companies);
+  const reloadCompanies = useAppStore((state) => state.reloadCompanies);
+  const switchCompany = useAppStore((state) => state.switchCompany);
+  const loadMembers = useAppStore((state) => state.loadMembers);
   const members = useAppStore((state) => state.members);
-  const memberships = useAppStore((state) => state.memberships);
-  const setMemberships = useAppStore((state) => state.setMemberships);
-  const setActiveCompany = useAppStore((state) => state.setActiveCompany);
-  const fetchMembers = useAppStore((state) => state.fetchMembers);
-  const logout = useAppStore((state) => state.logout);
 
-  const [name, setName] = useState('');
-  const [fiscalMonth, setFiscalMonth] = useState('1');
+  const [nameDraft, setNameDraft] = useState('');
+  const [fiscalYearStartDraft, setFiscalYearStartDraft] = useState('1');
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<CompanyRole>('member');
+  const [inviteRole, setInviteRole] = useState<'admin' | 'member'>('member');
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (!activeCompany) return;
-    setName(activeCompany.name);
-    setFiscalMonth(String(activeCompany.fiscal_year_start));
-  }, [activeCompany]);
-
-  useEffect(() => {
-    if (!activeCompany) return;
-    void fetchMembers();
-  }, [activeCompany, fetchMembers]);
-
-  if (!activeCompany || !currentUser) {
+  if (!selectedCompany || !token) {
     return (
-      <Card title="Company settings">
-        <p className="text-sm text-slate-500">Select a company to manage settings.</p>
+      <Card>
+        <p className="text-sm text-slate-600">No active company.</p>
       </Card>
     );
   }
 
-  const canManageCompany = activeRole === 'owner' || activeRole === 'admin';
-  const isOwner = activeRole === 'owner';
-  const canManageUsers = canManageCompany;
+  const activeCompany = selectedCompany;
+  const authToken = token;
+  const name = nameDraft || activeCompany.name;
+  const fiscalYearStart = fiscalYearStartDraft || String(activeCompany.fiscal_year_start);
 
-  const ownedCount = members.filter((member) => member.role === 'owner').length;
-  const roleOptions: CompanyRole[] = ['member', 'admin'];
+  const canManageCompany = activeRole === 'owner' || activeRole === 'admin';
+  const canManageUsers = canManageCompany;
+  const isOwner = activeRole === 'owner';
 
   async function onSaveCompany(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canManageCompany) return;
     setError(null);
-    setSaving(true);
+    setBusy(true);
     try {
-      const updated = await window.api.companies.update({
-        token: useAppStore.getState().token!,
-        companyId: activeCompany.id,
-        name,
-        fiscalYearStart: Number(fiscalMonth),
-      });
-      const updatedMemberships = memberships.map((membership) =>
-        membership.id === updated.id
-          ? { ...membership, name: updated.name, fiscal_year_start: updated.fiscal_year_start }
-          : membership
+      const updated = await api.companies.update(
+        authToken,
+        activeCompany.id,
+        name.trim(),
+        Number(fiscalYearStart),
       );
-      setMemberships(updatedMemberships);
-      const selected = updatedMemberships.find((item) => item.id === updated.id);
-      if (selected) {
-        setActiveCompany(selected, activeRole);
-      }
+
+      await reloadCompanies();
+      await switchCompany(updated.id);
+      setNameDraft('');
+      setFiscalYearStartDraft('');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Failed to update company');
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
 
@@ -80,215 +67,180 @@ export function CompanySettingsPage() {
     event.preventDefault();
     if (!canManageUsers) return;
     setError(null);
-    setSaving(true);
+    setBusy(true);
     try {
-      await window.api.companies.addMember({
-        token: useAppStore.getState().token!,
-        companyId: activeCompany.id,
-        email: inviteEmail,
-        role: inviteRole,
-      });
+      await api.companies.addMember(authToken, activeCompany.id, inviteEmail.trim(), inviteRole);
       setInviteEmail('');
       setInviteRole('member');
-      await fetchMembers();
+      await loadMembers();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Failed to invite member');
+      setError(caught instanceof Error ? caught.message : 'Failed to add member');
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
 
-  async function onRoleChange(membershipId: number, role: CompanyRole) {
-    if (!canManageUsers) return;
+  async function onChangeRole(membershipId: number, nextRole: Role) {
+    if (!canManageUsers || nextRole === 'owner') return;
     setError(null);
-    setSaving(true);
+    setBusy(true);
     try {
-      await window.api.companies.updateMemberRole({
-        token: useAppStore.getState().token!,
-        companyId: activeCompany.id,
-        membershipId,
-        role,
-      });
-      await fetchMembers();
+      await api.companies.updateMemberRole(authToken, activeCompany.id, membershipId, nextRole);
+      await loadMembers();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Failed to update role');
+      setError(caught instanceof Error ? caught.message : 'Failed to change role');
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
 
-  async function onRemove(membershipId: number) {
+  async function onRemoveMember(membershipId: number) {
     if (!canManageUsers) return;
     if (!window.confirm('Remove this member from the company?')) return;
     setError(null);
-    setSaving(true);
+    setBusy(true);
     try {
-      await window.api.companies.removeMember({
-        token: useAppStore.getState().token!,
-        companyId: activeCompany.id,
-        membershipId,
-      });
-      await fetchMembers();
+      await api.companies.removeMember(authToken, activeCompany.id, membershipId);
+      await loadMembers();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Failed to remove member');
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
 
   async function onDeleteCompany() {
     if (!isOwner) return;
-    const phrase = activeCompany.name;
-    const confirmText = window.prompt(
-      `Type "${phrase}" to permanently delete this company and all data.`
+    const confirmation = window.prompt(
+      `Type "${activeCompany.name}" to permanently delete this company.`,
     );
-    if (confirmText !== phrase) {
-      return;
-    }
+    if (confirmation !== activeCompany.name) return;
     setError(null);
-    setSaving(true);
+    setBusy(true);
     try {
-      await window.api.companies.delete({
-        token: useAppStore.getState().token!,
-        companyId: activeCompany.id,
-      });
-      const updated = memberships.filter((m) => m.id !== activeCompany.id);
-      setMemberships(updated);
-      if (updated.length > 0) {
-        const next = updated[0];
-        setActiveCompany(next, next.role);
-      } else {
-        setActiveCompany(null, null);
+      await api.companies.delete(authToken, activeCompany.id);
+      const nextCompanies = companies.filter((company) => company.id !== activeCompany.id);
+      await reloadCompanies();
+      if (nextCompanies.length > 0) {
+        const first = nextCompanies[0];
+        await switchCompany(first.id);
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Failed to delete company');
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
 
-  const nonOwnerRoleOptions = useMemo(
-    () =>
-      roleOptions.map((role) => (
-        <option key={role} value={role}>
-          {role}
-        </option>
-      )),
-    []
-  );
-
   return (
     <div className="space-y-4">
-      <Card title="Company settings" subtitle="Edit name and fiscal year start month.">
-        <form className="grid gap-3 md:grid-cols-3" onSubmit={onSaveCompany}>
+      <Card>
+        <h2 className="text-lg font-semibold text-slate-900">Company settings</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Active company: {activeCompany.name} (fiscal year starts {formatMonthLabel(activeCompany.fiscal_year_start)})
+        </p>
+        <form className="mt-4 grid gap-3 md:grid-cols-3" onSubmit={onSaveCompany}>
           <Field label="Company name">
             <Input
               value={name}
-              onChange={(event) => setName(event.target.value)}
-              disabled={!canManageCompany || saving}
+              onChange={(event) => setNameDraft(event.target.value)}
+              disabled={!canManageCompany || busy}
               required
             />
           </Field>
           <Field label="Fiscal year start month">
             <Select
-              value={fiscalMonth}
-              onChange={(event) => setFiscalMonth(event.target.value)}
-              disabled={!canManageCompany || saving}
+              value={fiscalYearStart}
+              onChange={(event) => setFiscalYearStartDraft(event.target.value)}
+              disabled={!canManageCompany || busy}
             >
-              {Array.from({ length: 12 }, (_, index) => {
-                const month = index + 1;
-                return (
-                  <option key={month} value={month}>
-                    {month}
-                  </option>
-                );
-              })}
+              {Array.from({ length: 12 }, (_, index) => (
+                <option key={index + 1} value={index + 1}>
+                  {index + 1}
+                </option>
+              ))}
             </Select>
           </Field>
           <div className="flex items-end">
-            <Button disabled={!canManageCompany || saving} type="submit">
+            <Button type="submit" disabled={!canManageCompany || busy}>
               Save company
             </Button>
           </div>
         </form>
       </Card>
 
-      <Card title="Manage users" subtitle="Owner/admin can add members by email.">
+      <Card>
+        <h2 className="text-lg font-semibold text-slate-900">Manage users</h2>
         {!canManageUsers ? (
-          <p className="text-sm text-slate-500">You do not have permission to manage users.</p>
+          <p className="mt-2 text-sm text-slate-600">Only owner/admin can manage users.</p>
         ) : (
           <>
-            <form className="grid gap-3 md:grid-cols-3" onSubmit={onInvite}>
-              <Field label="User email">
+            <form className="mt-3 grid gap-3 md:grid-cols-3" onSubmit={onInvite}>
+              <Field label="Email">
                 <Input
                   type="email"
                   value={inviteEmail}
                   onChange={(event) => setInviteEmail(event.target.value)}
-                  disabled={saving}
                   required
                 />
               </Field>
               <Field label="Role">
                 <Select
                   value={inviteRole}
-                  onChange={(event) => setInviteRole(event.target.value as CompanyRole)}
-                  disabled={saving}
+                  onChange={(event) => setInviteRole(event.target.value as 'admin' | 'member')}
                 >
-                  {nonOwnerRoleOptions}
+                  <option value="member">member</option>
+                  <option value="admin">admin</option>
                 </Select>
               </Field>
               <div className="flex items-end">
-                <Button disabled={saving} type="submit">
+                <Button type="submit" disabled={busy}>
                   Add member
                 </Button>
               </div>
             </form>
             <div className="mt-4 overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                    <th className="pb-2">Name</th>
-                    <th className="pb-2">Email</th>
-                    <th className="pb-2">Role</th>
-                    <th className="pb-2 text-right">Actions</th>
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-2 py-2">Name</th>
+                    <th className="px-2 py-2">Email</th>
+                    <th className="px-2 py-2">Role</th>
+                    <th className="px-2 py-2 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
+                <tbody>
                   {members.map((member) => (
-                    <tr key={member.id}>
-                      <td className="py-2">{member.name}</td>
-                      <td className="py-2 text-slate-600">{member.email}</td>
-                      <td className="py-2">
+                    <tr key={member.id} className="border-t border-slate-100">
+                      <td className="px-2 py-2">{member.name}</td>
+                      <td className="px-2 py-2 text-slate-600">{member.email}</td>
+                      <td className="px-2 py-2">
                         {member.role === 'owner' ? (
-                          <span className="rounded bg-slate-100 px-2 py-1 text-xs uppercase">
+                          <span className="rounded-full bg-slate-100 px-2 py-1 text-xs uppercase">
                             owner
                           </span>
                         ) : (
                           <select
                             value={member.role}
-                            onChange={(event) =>
-                              void onRoleChange(member.id, event.target.value as CompanyRole)
-                            }
-                            disabled={saving}
+                            onChange={(event) => void onChangeRole(member.id, event.target.value as Role)}
                             className="rounded border border-slate-300 px-2 py-1"
+                            disabled={busy}
                           >
-                            {nonOwnerRoleOptions}
+                            <option value="member">member</option>
+                            <option value="admin">admin</option>
                           </select>
                         )}
                       </td>
-                      <td className="py-2 text-right">
-                        {member.role !== 'owner' ? (
-                          <button
-                            className="text-xs font-medium text-rose-600"
-                            onClick={() => void onRemove(member.id)}
-                            disabled={saving}
+                      <td className="px-2 py-2 text-right">
+                        {member.role === 'owner' ? null : (
+                          <Button
+                            type="button"
+                            variant="danger"
+                            onClick={() => void onRemoveMember(member.id)}
+                            disabled={busy}
                           >
                             Remove
-                          </button>
-                        ) : (
-                          <span className="text-xs text-slate-400">
-                            {ownedCount > 1 ? 'Owner' : 'Primary owner'}
-                          </span>
+                          </Button>
                         )}
                       </td>
                     </tr>
@@ -300,22 +252,18 @@ export function CompanySettingsPage() {
         )}
       </Card>
 
-      <Card title="Danger zone" subtitle="Permanent actions.">
-        <div className="flex items-center justify-between rounded border border-rose-200 bg-rose-50 p-3">
-          <div>
-            <div className="font-medium text-rose-900">Delete company</div>
-            <p className="text-sm text-rose-800">
-              Hard delete company, accounts, transactions, and memberships.
-            </p>
-          </div>
-          <Button variant="danger" disabled={!isOwner || saving} onClick={onDeleteCompany}>
-            Delete
+      <Card>
+        <h2 className="text-lg font-semibold text-rose-700">Danger zone</h2>
+        <p className="mt-1 text-sm text-rose-600">
+          Delete company performs a hard delete of all company data.
+        </p>
+        <div className="mt-3">
+          <Button type="button" variant="danger" disabled={!isOwner || busy} onClick={onDeleteCompany}>
+            Delete company
           </Button>
         </div>
       </Card>
-
-      {error ? <p className="text-sm text-rose-600">{error}</p> : null}
-      <button className="hidden" onClick={() => void logout()} type="button" />
+      {error ? <ErrorText>{error}</ErrorText> : null}
     </div>
   );
 }

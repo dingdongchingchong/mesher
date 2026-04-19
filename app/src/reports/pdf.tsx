@@ -1,44 +1,46 @@
+/* eslint-disable react-refresh/only-export-components */
 import {
   Document,
+  type DocumentProps,
   Page,
   StyleSheet,
   Text,
   View,
   pdf,
-} from "@react-pdf/renderer";
-import type { BalanceSheetReport, ProfitLossReport } from "../types";
-import { formatCurrency } from "../utils/format";
+} from '@react-pdf/renderer';
+import type { BalanceSheetResult, ProfitLossResult } from '../types';
+import { formatCurrency } from '../utils/format';
 
 const styles = StyleSheet.create({
-  page: { padding: 24, fontSize: 11, fontFamily: "Helvetica" },
+  page: { padding: 24, fontSize: 11, fontFamily: 'Helvetica' },
   title: { fontSize: 18, marginBottom: 4 },
   subtitle: { fontSize: 10, color: "#666", marginBottom: 16 },
   section: { marginBottom: 16 },
   sectionTitle: { fontSize: 13, marginBottom: 8 },
   row: {
     display: "flex",
-    flexDirection: "row",
-    justifyContent: "space-between",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    borderBottomColor: '#eee',
     paddingVertical: 4,
   },
   total: {
     display: "flex",
-    flexDirection: "row",
-    justifyContent: "space-between",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginTop: 6,
     paddingTop: 6,
     borderTopWidth: 1,
-    borderTopColor: "#ddd",
+    borderTopColor: '#ddd',
     fontWeight: 700,
   },
 });
 
-async function downloadPdf(filename: string, doc: React.ReactElement) {
+async function downloadPdf(filename: string, doc: React.ReactElement<DocumentProps>) {
   const blob = await pdf(doc).toBlob();
   const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
+  const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
   anchor.click();
@@ -50,7 +52,7 @@ function ProfitLossDoc({
   report,
 }: {
   companyName: string;
-  report: ProfitLossReport;
+  report: ProfitLossResult;
 }) {
   return (
     <Document>
@@ -102,7 +104,7 @@ function BalanceSheetDoc({
   report,
 }: {
   companyName: string;
-  report: BalanceSheetReport;
+  report: BalanceSheetResult;
 }) {
   return (
     <Document>
@@ -158,17 +160,19 @@ function BalanceSheetDoc({
   );
 }
 
-export function exportProfitLossPdf(companyName: string, report: ProfitLossReport) {
+function exportProfitLossPdf(companyName: string, report: ProfitLossResult) {
   return downloadPdf(
     `profit-loss-${report.range.from}-${report.range.to}.pdf`,
     <ProfitLossDoc companyName={companyName} report={report} />
   );
 }
 
-export function exportBalanceSheetPdf(companyName: string, report: BalanceSheetReport) {
+function exportBalanceSheetPdf(companyName: string, report: BalanceSheetResult) {
   return downloadPdf(
     `balance-sheet-${report.asOf}.pdf`,
     <BalanceSheetDoc companyName={companyName} report={report} />
   );
 }
+
+export { exportProfitLossPdf, exportBalanceSheetPdf };
 

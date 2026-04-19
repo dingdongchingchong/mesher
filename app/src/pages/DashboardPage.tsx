@@ -1,22 +1,34 @@
-import { useMemo } from 'react';
-import { StatCard } from '../components/ui';
+import { useEffect } from 'react';
+import { Card, EmptyState, StatCard } from '../components/ui';
 import { useAppStore } from '../store/appStore';
 import { formatCurrency } from '../utils/format';
 
 export function DashboardPage() {
-  const dashboard = useAppStore((state) => state.dashboard);
   const activeCompany = useAppStore((state) => state.activeCompany);
+  const dashboard = useAppStore((state) => state.dashboard);
+  const refreshDashboard = useAppStore((state) => state.refreshDashboard);
+  const loading = useAppStore((state) => state.loading.dashboard);
+  const rows = dashboard?.recentTransactions ?? [];
 
-  const rows = useMemo(() => dashboard?.recentTransactions ?? [], [dashboard]);
+  useEffect(() => {
+    void refreshDashboard();
+  }, [refreshDashboard, activeCompany?.id]);
+
+  if (!activeCompany) {
+    return (
+      <EmptyState
+        title="No active company"
+        description="Select or create a company to view dashboard metrics."
+      />
+    );
+  }
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <Card>
         <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
-        <p className="text-sm text-slate-600">
-          {activeCompany ? `Current company: ${activeCompany.name}` : 'No active company selected'}
-        </p>
-      </div>
+        <p className="text-sm text-slate-600">Current company: {activeCompany.name}</p>
+      </Card>
 
       <div className="grid gap-3 md:grid-cols-3">
         <StatCard label="Current month income" value={formatCurrency(dashboard?.income ?? 0)} />
@@ -24,12 +36,13 @@ export function DashboardPage() {
         <StatCard
           label="Net"
           value={formatCurrency(dashboard?.net ?? 0)}
-          emphasis={(dashboard?.net ?? 0) >= 0 ? 'positive' : 'negative'}
+          tone={(dashboard?.net ?? 0) >= 0 ? 'positive' : 'negative'}
         />
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <Card>
         <h2 className="font-semibold text-slate-900">Recent transactions</h2>
+        {loading ? <p className="mt-2 text-sm text-slate-500">Loading dashboard...</p> : null}
         <div className="mt-3 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-600">
@@ -66,7 +79,7 @@ export function DashboardPage() {
             </tbody>
           </table>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

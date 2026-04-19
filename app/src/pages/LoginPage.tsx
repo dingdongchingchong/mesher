@@ -1,12 +1,13 @@
+import type { FormEvent } from 'react';
 import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { AuthLayout } from '../layouts/AuthLayout';
-import { Button, Input, Label, Notice } from '../components/ui';
+import { Button, ErrorText, Field, Input } from '../components/ui';
 import { useAppStore } from '../store/appStore';
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const session = useAppStore((state) => state.session);
+  const currentUser = useAppStore((state) => state.currentUser);
   const login = useAppStore((state) => state.login);
 
   const [email, setEmail] = useState('');
@@ -14,20 +15,19 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  if (session.currentUser) {
-    return <Navigate to="/" replace />;
+  if (currentUser) {
+    return <Navigate to="/dashboard" replace />;
   }
 
-  const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
     setLoading(true);
     try {
-      await login(email, password);
-      const next = useAppStore.getState().session;
-      if (next.companies.length === 0) {
+      const result = await login(email, password);
+      if (result.needsCompanyCreation) {
         navigate('/companies/new', { replace: true });
-      } else if (!next.activeCompany) {
+      } else if (result.needsCompanySelection) {
         navigate('/companies/select', { replace: true });
       } else {
         navigate('/dashboard', { replace: true });
@@ -42,23 +42,27 @@ export function LoginPage() {
   return (
     <AuthLayout title="Sign in" subtitle="Local auth only. No cloud sync.">
       <form className="space-y-4" onSubmit={onSubmit}>
-        <div className="space-y-1">
-          <Label htmlFor="email">Email</Label>
-          <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="password">Password</Label>
+        <Field label="Email">
+          <Input
+            id="email"
+            type="email"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </Field>
+        <Field label="Password">
           <Input
             id="password"
             type="password"
             required
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(event) => setPassword(event.target.value)}
           />
-        </div>
-        {error ? <Notice variant="error">{error}</Notice> : null}
-        <Button type="submit" disabled={loading} className="w-full">
-          {loading ? 'Signing in...' : 'Sign in'}
+        </Field>
+        {error ? <ErrorText>{error}</ErrorText> : null}
+        <Button type="submit" loading={loading} className="w-full">
+          Sign in
         </Button>
       </form>
       <p className="mt-4 text-sm text-slate-600">

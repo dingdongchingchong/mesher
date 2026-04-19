@@ -1,21 +1,36 @@
 import { useNavigate } from 'react-router-dom';
-import { Button, Card } from '../components/ui';
+import { Button, Card, EmptyState } from '../components/ui';
 import { useAppStore } from '../store/appStore';
 import { formatMonthLabel } from '../utils/format';
 
 export function CompanySelectionPage() {
   const navigate = useNavigate();
   const companies = useAppStore((state) => state.companies);
-  const setActiveCompany = useAppStore((state) => state.setActiveCompany);
+  const switchCompany = useAppStore((state) => state.switchCompany);
+
+  if (companies.length === 0) {
+    return (
+      <div className="min-h-screen bg-slate-100 px-4 py-8">
+        <div className="mx-auto max-w-4xl space-y-4">
+          <EmptyState
+            title="No companies yet"
+            description="Create your first company to begin recording cash-basis transactions."
+          />
+          <Button onClick={() => navigate('/companies/new')}>Create company</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 px-4 py-8">
       <div className="mx-auto max-w-4xl space-y-4">
-        <Card
-          title="Select company"
-          subtitle="Choose the company context to continue. All data is scoped to that active company."
-        >
-          <div className="grid gap-3 md:grid-cols-2">
+        <Card>
+          <h1 className="text-xl font-semibold text-slate-900">Select company</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Choose the company context to continue. All data is scoped to the active company.
+          </p>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
             {companies.map((item) => (
               <div key={item.id} className="rounded-xl border border-slate-200 p-4">
                 <div className="flex items-center justify-between">
@@ -29,16 +44,8 @@ export function CompanySelectionPage() {
                 </p>
                 <Button
                   className="mt-3"
-                  onClick={() => {
-                    setActiveCompany(
-                      {
-                        id: item.id,
-                        name: item.name,
-                        fiscal_year_start: item.fiscal_year_start,
-                        created_at: item.created_at,
-                      },
-                      item.role,
-                    );
+                  onClick={async () => {
+                    await switchCompany(item.id);
                     navigate('/dashboard');
                   }}
                 >
@@ -48,7 +55,7 @@ export function CompanySelectionPage() {
             ))}
           </div>
         </Card>
-        <Button variant="secondary" onClick={() => navigate('/companies/create')}>
+        <Button variant="secondary" onClick={() => navigate('/companies/new')}>
           Create new company
         </Button>
       </div>

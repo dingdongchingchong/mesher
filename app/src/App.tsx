@@ -23,7 +23,7 @@ function App() {
         <Route
           path="/companies/select"
           element={
-            <RequireAuth>
+            <RequireAuth requireCompany={false}>
               <CompanySelectionPage />
             </RequireAuth>
           }
@@ -31,7 +31,7 @@ function App() {
         <Route
           path="/companies/new"
           element={
-            <RequireAuth>
+            <RequireAuth requireCompany={false}>
               <CreateCompanyPage />
             </RequireAuth>
           }

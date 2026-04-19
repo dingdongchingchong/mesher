@@ -17,10 +17,11 @@ export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const currentUser = useAppStore((s) => s.currentUser);
-  const clearSession = useAppStore((s) => s.clearSession);
+  const logout = useAppStore((s) => s.logout);
+  const activeRole = useAppStore((s) => s.activeRole);
 
   const onLogout = async () => {
-    await clearSession();
+    await logout();
     navigate('/login', { replace: true });
   };
 
@@ -62,6 +63,10 @@ export function AppShell() {
                 );
               })}
             </nav>
+            <div className="mt-4 border-t border-slate-200 pt-3 text-xs text-slate-500">
+              Active role:{' '}
+              <span className="font-semibold uppercase text-slate-700">{activeRole ?? '-'}</span>
+            </div>
           </Card>
         </aside>
         <main className="min-w-0">

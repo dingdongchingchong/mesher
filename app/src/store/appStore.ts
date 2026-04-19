@@ -1,83 +1,94 @@
-import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
-import { api } from '../lib/api'
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import { api } from '../lib/api';
 import type {
   Account,
-  BalanceSheetReport,
+  BalanceSheetResult,
   Company,
   CompanyMember,
+  CompanySummary,
   DashboardSummary,
   DatePreset,
-  ProfitLossReport,
+  LedgerTransaction,
+  ProfitLossResult,
   Role,
-  Transaction,
   User,
-} from '../types'
+} from '../types';
 
 type LoadingState = {
-  dashboard: boolean
-  accounts: boolean
-  transactions: boolean
-  profitLoss: boolean
-  balanceSheet: boolean
-  members: boolean
-}
+  dashboard: boolean;
+  accounts: boolean;
+  transactions: boolean;
+  profitLoss: boolean;
+  balanceSheet: boolean;
+  members: boolean;
+  companies: boolean;
+};
 
 type AuthActionResult = {
-  needsCompanyCreation: boolean
-  needsCompanySelection: boolean
-}
+  needsCompanyCreation: boolean;
+  needsCompanySelection: boolean;
+};
 
-interface AppState {
-  token: string | null
-  currentUser: User | null
-  companies: Array<Company & { role: Role }>
-  activeCompany: Company | null
-  activeRole: Role | null
+type PersistedSession = {
+  token: string | null;
+  currentUser: User | null;
+  companies: CompanySummary[];
+  activeCompany: Company | null;
+  activeRole: Role | null;
+};
 
-  accounts: Account[]
-  transactions: Transaction[]
-  dashboard: DashboardSummary | null
-  profitLoss: ProfitLossReport | null
-  balanceSheet: BalanceSheetReport | null
-  companyMembers: CompanyMember[]
+interface AppState extends PersistedSession {
+  accounts: Account[];
+  transactions: LedgerTransaction[];
+  dashboard: DashboardSummary | null;
+  profitLoss: ProfitLossResult | null;
+  balanceSheet: BalanceSheetResult | null;
+  members: CompanyMember[];
+  loading: LoadingState;
+  error: string | null;
+  bootstrapped: boolean;
 
-  loading: LoadingState
-  error: string | null
-  initialized: boolean
+  setError: (message: string | null) => void;
+  setCurrentUser: (user: User | null) => void;
+  setCompanies: (companies: CompanySummary[]) => void;
+  setActiveCompany: (company: Company | null, role: Role | null) => void;
+  resetCompanyData: () => void;
+  hydrateFromBootstrap: (payload: {
+    token: string | null;
+    user: User | null;
+    companies: CompanySummary[];
+    activeCompany: Company | null;
+    activeRole: Role | null;
+  }) => void;
+  clearSession: () => void;
 
-  setError: (message: string | null) => void
-  clearDataForCompanySwitch: () => void
-  bootstrap: () => Promise<void>
+  bootstrap: () => Promise<void>;
   register: (
     name: string,
     email: string,
     password: string,
     confirmPassword: string,
-  ) => Promise<AuthActionResult>
-  login: (email: string, password: string) => Promise<AuthActionResult>
-  logout: () => Promise<void>
+  ) => Promise<AuthActionResult>;
+  login: (email: string, password: string) => Promise<AuthActionResult>;
+  logout: () => Promise<void>;
 
-  loadCompanies: () => Promise<void>
-  createCompany: (name: string, fiscalYearStart: number) => Promise<void>
-  switchCompany: (companyId: number) => Promise<void>
+  reloadCompanies: () => Promise<void>;
+  createCompany: (name: string, fiscalYearStart: number) => Promise<void>;
+  switchCompany: (companyId: number) => Promise<void>;
 
-  refreshDashboard: () => Promise<void>
-  refreshAccounts: () => Promise<void>
+  refreshDashboard: () => Promise<void>;
+  refreshAccounts: () => Promise<void>;
   refreshTransactions: (opts?: {
-    accountId?: number
-    fromDate?: string
-    toDate?: string
-    sortBy?: 'date' | 'amount' | 'created_at' | 'description'
-    sortDir?: 'asc' | 'desc'
-  }) => Promise<void>
-  loadProfitLoss: (
-    preset: DatePreset,
-    fromDate?: string,
-    toDate?: string,
-  ) => Promise<void>
-  loadBalanceSheet: (asOf: string) => Promise<void>
-  loadMembers: () => Promise<void>
+    accountId?: number | null;
+    fromDate?: string;
+    toDate?: string;
+    sortBy?: 'date' | 'amount' | 'created_at' | 'description';
+    sortDir?: 'asc' | 'desc';
+  }) => Promise<void>;
+  loadProfitLoss: (preset: DatePreset, fromDate?: string, toDate?: string) => Promise<void>;
+  loadBalanceSheet: (asOf: string) => Promise<void>;
+  loadMembers: () => Promise<void>;
 }
 
 const defaultLoading: LoadingState = {
@@ -87,263 +98,249 @@ const defaultLoading: LoadingState = {
   profitLoss: false,
   balanceSheet: false,
   members: false,
-}
+  companies: false,
+};
 
-function toAuthActionResult(companies: Array<Company & { role: Role }>): AuthActionResult {
+function actionResult(companies: CompanySummary[]): AuthActionResult {
   if (companies.length === 0) {
-    return { needsCompanyCreation: true, needsCompanySelection: false }
+    return { needsCompanyCreation: true, needsCompanySelection: false };
   }
-  return { needsCompanyCreation: false, needsCompanySelection: true }
+  return { needsCompanyCreation: false, needsCompanySelection: true };
 }
 
-function sortCompanies(companies: Array<Company & { role: Role }>) {
-  return [...companies].sort((a, b) => a.name.localeCompare(b.name))
+function sortCompanies(companies: CompanySummary[]) {
+  return [...companies].sort((a, b) => a.name.localeCompare(b.name));
 }
+
+const baseState: PersistedSession = {
+  token: null,
+  currentUser: null,
+  companies: [],
+  activeCompany: null,
+  activeRole: null,
+};
 
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
-      token: null,
-      currentUser: null,
-      companies: [],
-      activeCompany: null,
-      activeRole: null,
-
+      ...baseState,
       accounts: [],
       transactions: [],
       dashboard: null,
       profitLoss: null,
       balanceSheet: null,
-      companyMembers: [],
-
+      members: [],
       loading: defaultLoading,
       error: null,
-      initialized: false,
+      bootstrapped: false,
 
       setError: (message) => set({ error: message }),
+      setCurrentUser: (user) => set({ currentUser: user }),
+      setCompanies: (companies) => set({ companies: sortCompanies(companies) }),
+      setActiveCompany: (company, role) => set({ activeCompany: company, activeRole: role }),
 
-      clearDataForCompanySwitch: () =>
+      resetCompanyData: () =>
         set({
           accounts: [],
           transactions: [],
           dashboard: null,
           profitLoss: null,
           balanceSheet: null,
-          companyMembers: [],
+          members: [],
         }),
 
+      hydrateFromBootstrap: (payload) => {
+        set({
+          token: payload.token,
+          currentUser: payload.user,
+          companies: sortCompanies(payload.companies),
+          activeCompany: payload.activeCompany,
+          activeRole: payload.activeRole,
+          bootstrapped: true,
+          error: null,
+        });
+      },
+
+      clearSession: () => {
+        set({
+          ...baseState,
+          accounts: [],
+          transactions: [],
+          dashboard: null,
+          profitLoss: null,
+          balanceSheet: null,
+          members: [],
+          loading: defaultLoading,
+          error: null,
+          bootstrapped: true,
+        });
+      },
+
       bootstrap: async () => {
-        const { token, activeCompany } = get()
+        const { token, activeCompany } = get();
         if (!token) {
-          set({ initialized: true })
-          return
+          set({ bootstrapped: true });
+          return;
         }
         try {
-          const response = await api.authBootstrap(token, activeCompany?.id ?? null)
-          if (!response.user) {
-            set({
-              token: null,
-              currentUser: null,
-              companies: [],
-              activeCompany: null,
-              activeRole: null,
-              initialized: true,
-            })
-            return
-          }
-
-          set({
-            token: response.token,
-            currentUser: response.user,
-            companies: sortCompanies(response.companies),
-            activeCompany: response.activeCompany,
-            activeRole: response.activeRole,
-            initialized: true,
-          })
+          const payload = await api.auth.bootstrap(token, activeCompany?.id ?? null);
+          get().hydrateFromBootstrap(payload);
         } catch (error) {
           set({
-            token: null,
-            currentUser: null,
-            companies: [],
-            activeCompany: null,
-            activeRole: null,
-            initialized: true,
-            error: error instanceof Error ? error.message : 'Failed to initialize app',
-          })
+            ...baseState,
+            bootstrapped: true,
+            error: error instanceof Error ? error.message : 'Failed to bootstrap session',
+          });
         }
       },
 
       register: async (name, email, password, confirmPassword) => {
-        const response = await api.register(name, email, password, confirmPassword)
-        set({
-          token: response.token,
-          currentUser: response.user,
-          companies: sortCompanies(response.companies),
-          activeCompany: response.activeCompany,
-          activeRole: response.activeRole,
-          error: null,
-        })
-        return toAuthActionResult(response.companies)
+        const payload = await api.auth.register(name, email, password, confirmPassword);
+        get().hydrateFromBootstrap(payload);
+        return actionResult(payload.companies);
       },
 
       login: async (email, password) => {
-        const response = await api.login(email, password)
-        set({
-          token: response.token,
-          currentUser: response.user,
-          companies: sortCompanies(response.companies),
-          activeCompany: response.activeCompany,
-          activeRole: response.activeRole,
-          error: null,
-        })
-        return toAuthActionResult(response.companies)
+        const payload = await api.auth.login(email, password);
+        get().hydrateFromBootstrap(payload);
+        return actionResult(payload.companies);
       },
 
       logout: async () => {
-        const token = get().token
+        const token = get().token;
         try {
-          await api.logout(token)
+          await api.auth.logout(token);
         } finally {
-          set({
-            token: null,
-            currentUser: null,
-            companies: [],
-            activeCompany: null,
-            activeRole: null,
-            accounts: [],
-            transactions: [],
-            dashboard: null,
-            profitLoss: null,
-            balanceSheet: null,
-            companyMembers: [],
-            loading: defaultLoading,
-            error: null,
-          })
+          get().clearSession();
         }
       },
 
-      loadCompanies: async () => {
-        const token = get().token
-        const companies = await api.listCompanies(token)
-        const activeCompany = get().activeCompany
-        const stillActive = activeCompany
-          ? companies.find((company) => company.id === activeCompany.id)
-          : null
-        set({
-          companies: sortCompanies(companies),
-          activeCompany: stillActive
-            ? {
-                id: stillActive.id,
-                name: stillActive.name,
-                fiscal_year_start: stillActive.fiscal_year_start,
-                created_at: stillActive.created_at,
-              }
-            : null,
-          activeRole: stillActive?.role ?? null,
-        })
+      reloadCompanies: async () => {
+        const token = get().token;
+        if (!token) return;
+        set((state) => ({ loading: { ...state.loading, companies: true } }));
+        try {
+          const companies = await api.companies.list(token);
+          const current = get().activeCompany;
+          const match = current ? companies.find((item) => item.id === current.id) : null;
+          set({
+            companies: sortCompanies(companies),
+            activeCompany: match
+              ? {
+                  id: match.id,
+                  name: match.name,
+                  fiscal_year_start: match.fiscal_year_start,
+                  created_at: match.created_at,
+                }
+              : null,
+            activeRole: match?.role ?? null,
+          });
+        } finally {
+          set((state) => ({ loading: { ...state.loading, companies: false } }));
+        }
       },
 
       createCompany: async (name, fiscalYearStart) => {
-        const token = get().token
-        const created = await api.createCompany(token, name, fiscalYearStart)
-        const companies = await api.listCompanies(token)
+        const token = get().token;
+        if (!token) throw new Error('Not authenticated');
+        const created = await api.companies.create(token, name, fiscalYearStart);
+        const companies = await api.companies.list(token);
         set({
           companies: sortCompanies(companies),
           activeCompany: created.company,
           activeRole: created.role,
           error: null,
-        })
-        get().clearDataForCompanySwitch()
+        });
+        get().resetCompanyData();
       },
 
       switchCompany: async (companyId) => {
-        const membership = get().companies.find((company) => company.id === companyId)
-        if (!membership) {
-          throw new Error('Company membership not found')
+        const match = get().companies.find((item) => item.id === companyId);
+        if (!match) {
+          throw new Error('Company not found');
         }
-
-        get().clearDataForCompanySwitch()
+        get().resetCompanyData();
         set({
           activeCompany: {
-            id: membership.id,
-            name: membership.name,
-            fiscal_year_start: membership.fiscal_year_start,
-            created_at: membership.created_at,
+            id: match.id,
+            name: match.name,
+            fiscal_year_start: match.fiscal_year_start,
+            created_at: match.created_at,
           },
-          activeRole: membership.role,
+          activeRole: match.role,
           error: null,
-        })
+        });
       },
 
       refreshDashboard: async () => {
-        const { token, activeCompany } = get()
-        if (!activeCompany) return
-        set((state) => ({ loading: { ...state.loading, dashboard: true } }))
+        const { token, activeCompany } = get();
+        if (!token || !activeCompany) return;
+        set((state) => ({ loading: { ...state.loading, dashboard: true } }));
         try {
-          const dashboard = await api.getDashboard(token, activeCompany.id)
-          set({ dashboard })
+          const dashboard = await api.dashboard.summary(token, activeCompany.id);
+          set({ dashboard });
         } finally {
-          set((state) => ({ loading: { ...state.loading, dashboard: false } }))
+          set((state) => ({ loading: { ...state.loading, dashboard: false } }));
         }
       },
 
       refreshAccounts: async () => {
-        const { token, activeCompany } = get()
-        if (!activeCompany) return
-        set((state) => ({ loading: { ...state.loading, accounts: true } }))
+        const { token, activeCompany } = get();
+        if (!token || !activeCompany) return;
+        set((state) => ({ loading: { ...state.loading, accounts: true } }));
         try {
-          const accounts = await api.listAccounts(token, activeCompany.id)
-          set({ accounts })
+          const accounts = await api.accounts.list(token, activeCompany.id);
+          set({ accounts });
         } finally {
-          set((state) => ({ loading: { ...state.loading, accounts: false } }))
+          set((state) => ({ loading: { ...state.loading, accounts: false } }));
         }
       },
 
       refreshTransactions: async (opts) => {
-        const { token, activeCompany } = get()
-        if (!activeCompany) return
-        set((state) => ({ loading: { ...state.loading, transactions: true } }))
+        const { token, activeCompany } = get();
+        if (!token || !activeCompany) return;
+        set((state) => ({ loading: { ...state.loading, transactions: true } }));
         try {
-          const transactions = await api.listTransactions(token, activeCompany.id, opts)
-          set({ transactions })
+          const transactions = await api.transactions.list(token, activeCompany.id, opts);
+          set({ transactions });
         } finally {
-          set((state) => ({ loading: { ...state.loading, transactions: false } }))
+          set((state) => ({ loading: { ...state.loading, transactions: false } }));
         }
       },
 
       loadProfitLoss: async (preset, fromDate, toDate) => {
-        const { token, activeCompany } = get()
-        if (!activeCompany) return
-        set((state) => ({ loading: { ...state.loading, profitLoss: true } }))
+        const { token, activeCompany } = get();
+        if (!token || !activeCompany) return;
+        set((state) => ({ loading: { ...state.loading, profitLoss: true } }));
         try {
-          const report = await api.getProfitLoss(token, activeCompany.id, preset, fromDate, toDate)
-          set({ profitLoss: report })
+          const profitLoss = await api.reports.profitLoss(token, activeCompany.id, preset, fromDate, toDate);
+          set({ profitLoss });
         } finally {
-          set((state) => ({ loading: { ...state.loading, profitLoss: false } }))
+          set((state) => ({ loading: { ...state.loading, profitLoss: false } }));
         }
       },
 
       loadBalanceSheet: async (asOf) => {
-        const { token, activeCompany } = get()
-        if (!activeCompany) return
-        set((state) => ({ loading: { ...state.loading, balanceSheet: true } }))
+        const { token, activeCompany } = get();
+        if (!token || !activeCompany) return;
+        set((state) => ({ loading: { ...state.loading, balanceSheet: true } }));
         try {
-          const report = await api.getBalanceSheet(token, activeCompany.id, asOf)
-          set({ balanceSheet: report })
+          const balanceSheet = await api.reports.balanceSheet(token, activeCompany.id, asOf);
+          set({ balanceSheet });
         } finally {
-          set((state) => ({ loading: { ...state.loading, balanceSheet: false } }))
+          set((state) => ({ loading: { ...state.loading, balanceSheet: false } }));
         }
       },
 
       loadMembers: async () => {
-        const { token, activeCompany } = get()
-        if (!activeCompany) return
-        set((state) => ({ loading: { ...state.loading, members: true } }))
+        const { token, activeCompany } = get();
+        if (!token || !activeCompany) return;
+        set((state) => ({ loading: { ...state.loading, members: true } }));
         try {
-          const companyMembers = await api.listCompanyMembers(token, activeCompany.id)
-          set({ companyMembers })
+          const members = await api.companies.members(token, activeCompany.id);
+          set({ members });
         } finally {
-          set((state) => ({ loading: { ...state.loading, members: false } }))
+          set((state) => ({ loading: { ...state.loading, members: false } }));
         }
       },
     }),
@@ -358,4 +355,4 @@ export const useAppStore = create<AppState>()(
       }),
     },
   ),
-)
+);

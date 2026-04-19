@@ -1,8 +1,15 @@
 import { useState } from 'react';
-import { Button, EmptyState, ErrorText, Input, PageCard } from '../components/ui';
+import {
+  Button,
+  EmptyState,
+  ErrorText,
+  Input,
+  Label,
+  PageCard,
+} from '../components/ui';
+import { exportBalanceSheetPdf } from '../reports/pdf';
 import { useAppStore } from '../store/appStore';
 import { formatCurrency } from '../utils/format';
-import { exportBalanceSheetPdf } from '../reports/pdf';
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -19,17 +26,21 @@ export function BalanceSheetPage() {
   const [exporting, setExporting] = useState(false);
 
   const runReport = async () => {
-    if (!activeCompany) return;
+    if (!activeCompany) {
+      return;
+    }
     setError(null);
     try {
-      await loadBalanceSheet(activeCompany.id, asOfDate);
+      await loadBalanceSheet(asOfDate);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to run report');
     }
   };
 
   const onExport = async () => {
-    if (!activeCompany || !report) return;
+    if (!activeCompany || !report) {
+      return;
+    }
     setExporting(true);
     setError(null);
     try {
@@ -43,7 +54,7 @@ export function BalanceSheetPage() {
 
   const renderSection = (
     title: string,
-    rows: Array<{ accountId: number; accountName: string; total: number }>,
+    rows: Array<{ account_id: number; account_name: string; total: number }>,
   ) => (
     <div className="rounded-xl border border-slate-200 p-4">
       <h3 className="font-semibold text-slate-900">{title}</h3>
@@ -52,8 +63,8 @@ export function BalanceSheetPage() {
           <p className="text-sm text-slate-500">No rows in this section.</p>
         ) : (
           rows.map((row) => (
-            <div key={row.accountId} className="flex items-center justify-between text-sm">
-              <span>{row.accountName}</span>
+            <div key={row.account_id} className="flex items-center justify-between text-sm">
+              <span>{row.account_name}</span>
               <span className="font-medium">{formatCurrency(row.total)}</span>
             </div>
           ))
@@ -67,7 +78,7 @@ export function BalanceSheetPage() {
       <PageCard title="Balance Sheet" subtitle="Simplified cash-basis balance sheet as-of a date.">
         <div className="grid gap-3 md:grid-cols-4">
           <div className="space-y-1 md:col-span-2">
-            <label className="text-sm font-medium text-slate-700">As of date</label>
+            <Label htmlFor="as-of-date">As of date</Label>
             <Input type="date" value={asOfDate} onChange={(event) => setAsOfDate(event.target.value)} />
           </div>
           <div className="flex items-end gap-2 md:col-span-2">
@@ -88,7 +99,7 @@ export function BalanceSheetPage() {
           description="Run a report to view assets, liabilities, and equity balances."
         />
       ) : (
-        <PageCard title={`Results (as of ${report.asOfDate})`}>
+        <PageCard title={`Results (as of ${report.asOf})`}>
           <div className="grid gap-3 md:grid-cols-3">
             <div className="rounded-xl border border-slate-200 bg-sky-50 p-4">
               <div className="text-xs uppercase text-slate-500">Assets</div>

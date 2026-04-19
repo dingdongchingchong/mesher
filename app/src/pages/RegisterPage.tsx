@@ -1,12 +1,15 @@
+import type { FormEvent } from 'react';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { AuthLayout } from '../layouts/AuthLayout';
-import { Button, Card, ErrorText, Input, Label } from '../components/ui';
+import { Button, ErrorText, Field, Input, Notice } from '../components/ui';
 import { useAppStore } from '../store/appStore';
 
 export function RegisterPage() {
   const navigate = useNavigate();
+  const currentUser = useAppStore((state) => state.currentUser);
   const register = useAppStore((state) => state.register);
+
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -14,78 +17,75 @@ export function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  if (currentUser) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
     setError(null);
+    setLoading(true);
     try {
-      await register(name, email, password, confirmPassword);
-      navigate('/companies/select');
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Registration failed');
+      const result = await register(name, email, password, confirmPassword);
+      if (result.needsCompanyCreation) {
+        navigate('/companies/new', { replace: true });
+      } else {
+        navigate('/companies/select', { replace: true });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <AuthLayout
-      title="Create account"
-      subtitle="Register with local auth (bcrypt password hashing)."
-      footer={
-        <p className="text-sm text-slate-600">
-          Already have an account?{' '}
-          <Link className="font-semibold text-indigo-700 hover:text-indigo-600" to="/login">
-            Sign in
-          </Link>
-        </p>
-      }
-    >
-      <form className="space-y-4" onSubmit={handleSubmit}>
-        <div className="space-y-1">
-          <Label htmlFor="name">Name</Label>
-          <Input id="name" value={name} onChange={(event) => setName(event.target.value)} required />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="email">Email</Label>
+    <AuthLayout title="Create account" subtitle="Register with local auth (bcrypt password hashing).">
+      <form className="space-y-4" onSubmit={onSubmit}>
+        <Field label="Name">
+          <Input id="name" required value={name} onChange={(event) => setName(event.target.value)} />
+        </Field>
+        <Field label="Email">
           <Input
             id="email"
             type="email"
+            required
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            required
           />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="password">Password</Label>
+        </Field>
+        <Field label="Password">
           <Input
             id="password"
             type="password"
             minLength={8}
+            required
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            required
           />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="confirmPassword">Confirm password</Label>
+        </Field>
+        <Field label="Confirm password">
           <Input
             id="confirmPassword"
             type="password"
             minLength={8}
+            required
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
-            required
           />
-        </div>
+        </Field>
         {error ? <ErrorText>{error}</ErrorText> : null}
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? 'Creating account...' : 'Create account'}
+        <Button type="submit" className="w-full" loading={loading}>
+          Create account
         </Button>
       </form>
-      <Card className="mt-5 bg-indigo-50 text-indigo-900">
-        Passwords require at least 8 characters and are hashed before storage.
-      </Card>
+      <Notice className="mt-4">Passwords are hashed with bcrypt and never stored in plain text.</Notice>
+      <p className="mt-4 text-sm text-slate-600">
+        Already have an account?{' '}
+        <Link to="/login" className="font-semibold text-indigo-700 hover:text-indigo-600">
+          Sign in
+        </Link>
+      </p>
     </AuthLayout>
   );
 }

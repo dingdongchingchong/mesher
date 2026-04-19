@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthLayout } from '../layouts/AuthLayout';
 import { Button, ErrorText, Field, Input, Select } from '../components/ui';
@@ -28,12 +28,12 @@ export function CreateCompanyPage() {
   const [fiscalYearStart, setFiscalYearStart] = useState('1');
   const [error, setError] = useState<string | null>(null);
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     try {
       await createCompany(name, Number(fiscalYearStart));
-      navigate('/');
+      navigate('/dashboard');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not create company');
     }
@@ -45,7 +45,7 @@ export function CreateCompanyPage() {
       subtitle="Set up your workspace and seed the default chart of accounts."
     >
       <form className="space-y-4" onSubmit={onSubmit}>
-        <Field label="Company name" htmlFor="company-name">
+        <Field label="Company name">
           <Input
             id="company-name"
             value={name}
@@ -53,7 +53,7 @@ export function CreateCompanyPage() {
             required
           />
         </Field>
-        <Field label="Fiscal year start month" htmlFor="fiscal-start">
+        <Field label="Fiscal year start month">
           <Select
             id="fiscal-start"
             value={fiscalYearStart}

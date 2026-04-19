@@ -1,8 +1,9 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import type { FormEvent } from 'react';
 import { api } from '../lib/api';
 import { useAppStore } from '../store/appStore';
 import type { Account, AccountType } from '../types';
-import { EmptyState, ErrorText, Input, Label, PageCard, PrimaryButton, Select } from '../components/ui';
+import { Button, Card, EmptyState, ErrorText, Input, Label, Select } from '../components/ui';
 
 const ACCOUNT_TYPES: AccountType[] = ['income', 'expense', 'asset', 'liability', 'equity'];
 
@@ -40,12 +41,9 @@ export function ChartOfAccountsPage() {
     setBusy(true);
     setError(null);
     try {
-      await api.createAccount({
-        companyId: activeCompany.id,
-        name: name.trim(),
-        type,
-        code: code.trim() || null,
-      });
+      const token = useAppStore.getState().token;
+      if (!token) throw new Error('Not authenticated');
+      await api.accounts.create(token, activeCompany.id, name.trim(), type, code.trim() || undefined);
       setName('');
       setCode('');
       await refreshAccounts();
@@ -71,12 +69,15 @@ export function ChartOfAccountsPage() {
     setBusy(true);
     setError(null);
     try {
-      await api.updateAccount({
-        companyId: activeCompany.id,
-        accountId: account.id,
-        name: editName.trim(),
-        code: editCode.trim() || null,
-      });
+      const token = useAppStore.getState().token;
+      if (!token) throw new Error('Not authenticated');
+      await api.accounts.update(
+        token,
+        activeCompany.id,
+        account.id,
+        editName.trim(),
+        editCode.trim() || undefined,
+      );
       setEditingId(null);
       await refreshAccounts();
     } catch (updateError) {
@@ -91,11 +92,9 @@ export function ChartOfAccountsPage() {
     setBusy(true);
     setError(null);
     try {
-      await api.setAccountActive({
-        companyId: activeCompany.id,
-        accountId: account.id,
-        isActive,
-      });
+      const token = useAppStore.getState().token;
+      if (!token) throw new Error('Not authenticated');
+      await api.accounts.setActive(token, activeCompany.id, account.id, isActive);
       await refreshAccounts();
     } catch (stateError) {
       setError(stateError instanceof Error ? stateError.message : 'Could not update account state');
@@ -112,10 +111,9 @@ export function ChartOfAccountsPage() {
     setBusy(true);
     setError(null);
     try {
-      await api.deleteAccount({
-        companyId: activeCompany.id,
-        accountId: account.id,
-      });
+      const token = useAppStore.getState().token;
+      if (!token) throw new Error('Not authenticated');
+      await api.accounts.delete(token, activeCompany.id, account.id);
       await refreshAccounts();
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : 'Could not delete account');
@@ -126,7 +124,9 @@ export function ChartOfAccountsPage() {
 
   return (
     <div className="space-y-6">
-      <PageCard title="Chart of Accounts" subtitle="All accounts are scoped to the active company.">
+      <Card>
+        <h2 className="text-lg font-semibold text-slate-900">Chart of Accounts</h2>
+        <p className="mt-1 text-sm text-slate-600">All accounts are scoped to the active company.</p>
         <form className="grid gap-3 md:grid-cols-4" onSubmit={submitCreate}>
           <div className="space-y-1">
             <Label htmlFor="new-account-name">Name</Label>
@@ -161,16 +161,17 @@ export function ChartOfAccountsPage() {
             </Select>
           </div>
           <div className="flex items-end">
-            <PrimaryButton type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy}>
               Add account
-            </PrimaryButton>
+            </Button>
           </div>
         </form>
         {error ? <ErrorText>{error}</ErrorText> : null}
-      </PageCard>
+      </Card>
 
       {grouped.map((group) => (
-        <PageCard key={group.type} title={group.type.toUpperCase()}>
+        <Card key={group.type}>
+          <h3 className="text-base font-semibold text-slate-900">{group.type.toUpperCase()}</h3>
           {group.rows.length === 0 ? (
             <EmptyState title={`No ${group.type} accounts`} description="Create one to get started." />
           ) : (
@@ -185,9 +186,9 @@ export function ChartOfAccountsPage() {
                         <Input value={editCode} onChange={(event) => setEditCode(event.target.value)} />
                         <div className="text-sm text-slate-600 md:col-span-2">{account.type}</div>
                         <div className="flex gap-2 md:col-span-4">
-                          <PrimaryButton type="button" onClick={() => void saveEdit(account)} disabled={busy}>
+                          <Button type="button" onClick={() => void saveEdit(account)} disabled={busy}>
                             Save
-                          </PrimaryButton>
+                          </Button>
                           <button
                             type="button"
                             className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
@@ -246,7 +247,7 @@ export function ChartOfAccountsPage() {
               })}
             </div>
           )}
-        </PageCard>
+        </Card>
       ))}
     </div>
   );

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 type AuthLayoutProps = {
   title: string;
-  subtitle: string;
+  subtitle?: string;
   children: ReactNode;
   footer?: ReactNode;
 };
@@ -15,7 +15,7 @@ export function AuthLayout({ title, subtitle, children, footer }: AuthLayoutProp
           <div className="mb-6">
             <p className="text-xs uppercase tracking-[0.18em] text-slate-500">mvpmvp</p>
             <h1 className="mt-2 text-2xl font-semibold text-slate-900">{title}</h1>
-            <p className="mt-2 text-sm text-slate-600">{subtitle}</p>
+            {subtitle ? <p className="mt-2 text-sm text-slate-600">{subtitle}</p> : null}
           </div>
           {children}
           {footer ? <div className="mt-6">{footer}</div> : null}

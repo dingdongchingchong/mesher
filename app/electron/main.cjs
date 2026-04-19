@@ -1,5 +1,5 @@
 const path = require('node:path');
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const { initDb, registerIpcHandlers } = require('./db.cjs');
 
 const isDev = !!process.env.VITE_DEV_SERVER_URL;
@@ -29,7 +29,7 @@ function createWindow() {
 app.whenReady().then(() => {
   const dbPath = path.join(app.getPath('userData'), 'mvpmvp.sqlite');
   initDb(dbPath);
-  registerIpcHandlers();
+  registerIpcHandlers(ipcMain);
   createWindow();
 
   app.on('activate', () => {

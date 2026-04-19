@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { saveAs } from '@react-pdf/renderer';
 import { useAppStore } from '../store/appStore';
-import { Button, Card, Label } from '../components/ui';
+import { exportProfitLossPdf } from '../reports/pdf';
+import { Button, EmptyState, ErrorText, Input, Label, PageCard, Select } from '../components/ui';
+import type { DatePreset, ProfitLossResult } from '../types';
 import { formatCurrency } from '../utils/format';
-import { profitLossPdf } from '../reports/pdf';
-import type { DatePreset } from '../types';
 
 const PRESETS: Array<{ key: DatePreset; label: string }> = [
   { key: 'current_month', label: 'Current month' },
@@ -15,15 +14,19 @@ const PRESETS: Array<{ key: DatePreset; label: string }> = [
   { key: 'custom', label: 'Custom' },
 ];
 
+const today = format(new Date(), 'yyyy-MM-dd');
+
 export function ProfitLossPage() {
-  const activeCompany = useAppStore((state) => state.activeCompany);
-  const report = useAppStore((state) => state.profitLossReport);
-  const loadReport = useAppStore((state) => state.loadProfitLossReport);
+  const activeCompany = useAppStore((s) => s.activeCompany);
+  const report = useAppStore((s) => s.profitLoss);
+  const loading = useAppStore((s) => s.loading.profitLoss);
+  const loadProfitLoss = useAppStore((s) => s.loadProfitLoss);
+
   const [preset, setPreset] = useState<DatePreset>('current_month');
-  const [fromDate, setFromDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [toDate, setToDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [loading, setLoading] = useState(false);
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const totals = useMemo(
     () => ({
@@ -34,128 +37,131 @@ export function ProfitLossPage() {
     [report],
   );
 
-  async function runReport() {
+  const runReport = async () => {
     if (!activeCompany) return;
-    setLoading(true);
     setError(null);
     try {
-      await loadReport(activeCompany.id, preset, fromDate, toDate);
+      await loadProfitLoss(preset, startDate, endDate);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Failed to run report');
-    } finally {
-      setLoading(false);
     }
-  }
+  };
 
-  async function exportPdf() {
+  const onExport = async () => {
     if (!activeCompany || !report) return;
-    const blob = await saveAs(
-      profitLossPdf(activeCompany.name, report),
-      `profit-loss-${report.range.from}-${report.range.to}.pdf`,
-    );
-    return blob;
-  }
+    setExporting(true);
+    setError(null);
+    try {
+      await exportProfitLossPdf(activeCompany.name, report);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export PDF');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const section = (title: string, rows: ProfitLossResult['income']) => (
+    <div className="rounded-xl border border-slate-200 p-4">
+      <h3 className="font-semibold text-slate-900">{title}</h3>
+      <div className="mt-3 space-y-2">
+        {rows.length === 0 ? (
+          <p className="text-sm text-slate-500">No data in this period.</p>
+        ) : (
+          rows.map((row) => (
+            <div key={row.account_id} className="flex items-center justify-between text-sm">
+              <span>{row.account_name}</span>
+              <span className="font-medium">{formatCurrency(row.total)}</span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-4">
-      <Card title="Profit & Loss" subtitle="Cash basis report with date presets and custom ranges">
+      <PageCard title="Profit & Loss" subtitle="Cash basis report for income and expenses.">
         <div className="grid gap-3 md:grid-cols-4">
-          <div>
+          <div className="space-y-1">
             <Label htmlFor="preset">Preset</Label>
-            <select
+            <Select
               id="preset"
               value={preset}
               onChange={(event) => setPreset(event.target.value as DatePreset)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             >
               {PRESETS.map((item) => (
                 <option key={item.key} value={item.key}>
                   {item.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
-          <div>
-            <Label htmlFor="from">From</Label>
-            <input
-              id="from"
+          <div className="space-y-1">
+            <Label htmlFor="start-date">Start date</Label>
+            <Input
+              id="start-date"
               type="date"
-              value={fromDate}
+              value={startDate}
               disabled={preset !== 'custom'}
-              onChange={(event) => setFromDate(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              onChange={(event) => setStartDate(event.target.value)}
             />
           </div>
-          <div>
-            <Label htmlFor="to">To</Label>
-            <input
-              id="to"
+          <div className="space-y-1">
+            <Label htmlFor="end-date">End date</Label>
+            <Input
+              id="end-date"
               type="date"
-              value={toDate}
+              value={endDate}
               disabled={preset !== 'custom'}
-              onChange={(event) => setToDate(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              onChange={(event) => setEndDate(event.target.value)}
             />
           </div>
           <div className="flex items-end gap-2">
-            <Button onClick={runReport} disabled={loading}>
-              {loading ? 'Running...' : 'Run report'}
+            <Button onClick={runReport} loading={loading}>
+              Run report
             </Button>
-            <Button variant="secondary" onClick={exportPdf} disabled={!report}>
-              Export PDF
+            <Button variant="secondary" onClick={onExport} disabled={!report || exporting}>
+              {exporting ? 'Exporting...' : 'Export PDF'}
             </Button>
           </div>
         </div>
-        {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
-      </Card>
+        {error ? <ErrorText>{error}</ErrorText> : null}
+      </PageCard>
 
       {!report ? (
-        <Card>
-          <p className="text-sm text-slate-600">Run a report to view results.</p>
-        </Card>
+        <EmptyState
+          title="No report generated"
+          description="Run a report to see income, expenses, and net results."
+        />
       ) : (
-        <Card title={`Results (${report.range.from} → ${report.range.to})`}>
+        <PageCard title={`Results (${report.range.from} to ${report.range.to})`}>
           <div className="grid gap-3 md:grid-cols-3">
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-              <p className="text-xs uppercase text-slate-500">Income</p>
-              <p className="text-xl font-semibold text-emerald-700">{formatCurrency(totals.income)}</p>
+            <div className="rounded-xl border border-slate-200 bg-emerald-50 p-4">
+              <div className="text-xs uppercase text-slate-500">Income</div>
+              <div className="mt-1 text-xl font-semibold text-emerald-700">
+                {formatCurrency(totals.income)}
+              </div>
             </div>
-            <div className="rounded-lg border border-rose-200 bg-rose-50 p-4">
-              <p className="text-xs uppercase text-slate-500">Expenses</p>
-              <p className="text-xl font-semibold text-rose-700">{formatCurrency(totals.expenses)}</p>
+            <div className="rounded-xl border border-slate-200 bg-rose-50 p-4">
+              <div className="text-xs uppercase text-slate-500">Expenses</div>
+              <div className="mt-1 text-xl font-semibold text-rose-700">
+                {formatCurrency(totals.expenses)}
+              </div>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-100 p-4">
-              <p className="text-xs uppercase text-slate-500">Net</p>
-              <p className={`text-xl font-semibold ${totals.net >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+            <div className="rounded-xl border border-slate-200 bg-slate-100 p-4">
+              <div className="text-xs uppercase text-slate-500">Net</div>
+              <div
+                className={`mt-1 text-xl font-semibold ${totals.net >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}
+              >
                 {formatCurrency(totals.net)}
-              </p>
-            </div>
-          </div>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <div className="rounded-lg border border-slate-200 p-3">
-              <h3 className="font-semibold text-slate-900">Income accounts</h3>
-              <div className="mt-2 space-y-1 text-sm">
-                {report.income.map((row) => (
-                  <div className="flex justify-between" key={row.account_id}>
-                    <span>{row.account_name}</span>
-                    <span className="font-medium">{formatCurrency(row.total)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-lg border border-slate-200 p-3">
-              <h3 className="font-semibold text-slate-900">Expense accounts</h3>
-              <div className="mt-2 space-y-1 text-sm">
-                {report.expenses.map((row) => (
-                  <div className="flex justify-between" key={row.account_id}>
-                    <span>{row.account_name}</span>
-                    <span className="font-medium">{formatCurrency(row.total)}</span>
-                  </div>
-                ))}
               </div>
             </div>
           </div>
-        </Card>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {section('Income', report.income)}
+            {section('Expenses', report.expenses)}
+          </div>
+        </PageCard>
       )}
     </div>
   );
