@@ -1,7 +1,22 @@
-import Database from "better-sqlite3";
+import { createRequire } from "node:module";
 import bcrypt from "bcryptjs";
 import fs from "node:fs";
 import path from "node:path";
+import type BetterSqlite3 from "better-sqlite3";
+
+// Prefer the Termux/Android fork when present; fall back to upstream better-sqlite3.
+// On Termux, install via `npm run install:termux` (see givememoney/README.md).
+const require = createRequire(import.meta.url);
+
+function loadDatabase(): typeof BetterSqlite3 {
+  try {
+    return require("@mmmbuto/better-sqlite3-termux") as typeof BetterSqlite3;
+  } catch {
+    return require("better-sqlite3") as typeof BetterSqlite3;
+  }
+}
+
+const Database = loadDatabase();
 
 export type User = {
   id: number;
@@ -48,7 +63,7 @@ export type UserStats = {
 const DEFAULT_TEMPLATE =
   "Hi {name}, I need your help! Can you lend me some money?";
 
-let db: Database.Database;
+let db: BetterSqlite3.Database;
 
 export function initDb(dbPath: string) {
   const dir = path.dirname(dbPath);

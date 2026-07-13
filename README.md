@@ -15,6 +15,8 @@ cp server/.env.example server/.env
 npm run dev
 ```
 
+On **Termux (Android)**, use `npm run install:termux` instead of `install:all` (see [`givememoney/README.md`](./givememoney/README.md#termux-android)).
+
 ## Accounting app
 
 See [`app/README.md`](./app/README.md) for the desktop cash-basis accounting MVP.
