@@ -27,6 +27,65 @@ npm run dev
 - App: http://localhost:5174
 - API: http://localhost:3001
 
+## Termux (Android)
+
+`better-sqlite3` often fails on Termux (missing / broken native prebuilds). Use the Termux fork and skip broken install scripts.
+
+### 1. System packages
+
+```bash
+pkg update && pkg upgrade -y
+pkg install -y nodejs-lts clang make python build-essential libsqlite git
+```
+
+### 2. One-shot project setup
+
+From this folder (`givememoney`):
+
+```bash
+npm run install:termux
+npm run dev
+```
+
+That script will:
+
+1. Clean `node_modules` / lockfiles from failed installs
+2. Install `@mmmbuto/better-sqlite3-termux` (preferred by the server DB loader)
+3. Install server deps with `--ignore-scripts`, then rebuild sqlite
+4. Install the client
+5. Copy `server/.env.example` → `server/.env` if needed
+
+### 3. Manual fallback
+
+If the script fails, run the same steps by hand:
+
+```bash
+rm -rf node_modules server/node_modules client/node_modules \
+  package-lock.json server/package-lock.json client/package-lock.json
+
+cd server
+npm install @mmmbuto/better-sqlite3-termux --save
+cd ..
+
+npm install --prefix server --ignore-scripts
+npm install --prefix client
+cp -n server/.env.example server/.env
+
+npm run dev
+```
+
+If sqlite still will not load:
+
+```bash
+cd server && npm install better-sqlite3 --build-from-source
+```
+
+Optional globals (usually not required; local `tsx` / `vite` / `concurrently` are already wired):
+
+```bash
+npm install -g tsx vite concurrently
+```
+
 ## Production
 
 ```bash
